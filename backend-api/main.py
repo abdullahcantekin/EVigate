@@ -19,7 +19,6 @@ supabase: Client = create_client(url, key)
 app = FastAPI(title="EVigate API", description="Akıllı Elektrikli Araç Rota Asistanı")
 
 # --- CORS AYARLARI ---
-# Frontend (React) ile Backend'in konuşabilmesi için şarttır.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -29,11 +28,19 @@ app.add_middleware(
 )
 
 # --- VERİ MODELLERİ ---
+
 class IstasyonEkle(BaseModel):
     isim: str
     enlem: float
     boylam: float
     hizli_sarj_var_mi: bool = False
+
+# Yeni Pil Verisi Modeli
+class PilVerisi(BaseModel):
+    model_key: str
+    yil: int
+    km: int
+    sarj_limiti: int
 
 # --- UÇ NOKTALAR (ENDPOINTS) ---
 
@@ -45,12 +52,8 @@ def read_root():
 @app.get("/istasyonlar")
 def istasyonlari_getir():
     try:
-        # DİKKAT: Tablo ismini orijinal 'stations' olarak güncelledik.
         response = supabase.table("stations").select("*").execute()
-        
-        # VS Code Terminalinde veriyi kontrol etmek için:
         print(f"--- DEBUG: Veritabanından {len(response.data)} adet veri çekildi ---")
-        
         return response.data
     except Exception as e:
         print(f"❌ SUPABASE HATASI: {str(e)}")
@@ -66,9 +69,40 @@ def yeni_istasyon_ekle(istasyon: IstasyonEkle):
             "boylam": istasyon.boylam,
             "hizli_sarj_var_mi": istasyon.hizli_sarj_var_mi
         }
-        # Burada da tablo ismini 'stations' yaptık.
         cevap = supabase.table("stations").insert(yeni_veri).execute()
         return {"mesaj": "İstasyon başarıyla eklendi!", "veri": cevap.data}
     except Exception as e:
         print(f"❌ EKLEME HATASI: {str(e)}")
+        return {"hata": str(e)}
+
+# --- PİL VERİSİ API'LERİ ---
+
+# 3. Pil Verisini Getirme (GET)
+@app.get("/pil-verisi")
+def get_pil_verisi():
+    try:
+        # ID'si 1 olan varsayılan satırı çeker
+        response = supabase.table("kullanici_pil_verisi").select("*").eq("id", 1).execute()
+        if len(response.data) > 0:
+            return response.data[0]
+        return {"mesaj": "Veri bulunamadı"}
+    except Exception as e:
+        print(f"❌ PİL VERİSİ ÇEKME HATASI: {str(e)}")
+        return {"hata": str(e)}
+
+# 4. Pil Verisini Güncelleme (POST)
+@app.post("/pil-verisi")
+def update_pil_verisi(veri: PilVerisi):
+    try:
+        guncel_veri = {
+            "model_key": veri.model_key,
+            "yil": veri.yil,
+            "km": veri.km,
+            "sarj_limiti": veri.sarj_limiti
+        }
+        # ID'si 1 olan satırı günceller
+        response = supabase.table("kullanici_pil_verisi").update(guncel_veri).eq("id", 1).execute()
+        return {"mesaj": "Pil verileri başarıyla güncellendi", "data": response.data}
+    except Exception as e:
+        print(f"❌ GÜNCELLEME HATASI: {str(e)}")
         return {"hata": str(e)}
